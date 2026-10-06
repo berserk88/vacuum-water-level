@@ -16,10 +16,10 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from homeassistant.core import HomeAssistant, State
-from homeassistant.helpers import entity_registry as er
+if TYPE_CHECKING:
+    from homeassistant.core import HomeAssistant, State
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -101,20 +101,20 @@ def _score_entity(
         Tuple of (score, reason).
     """
     score = 0.0
-    reason = ""
+    reasons: list[str] = []
 
     # Check if entity belongs to the same device (slug match)
     candidate_slug = _get_vacuum_slug(entity_id)
     if vacuum_slug and vacuum_slug in candidate_slug:
         score += 0.3
-        reason = "same_device"
+        reasons.append("same_device")
 
     # Check pattern matching in entity ID
     entity_lower = entity_id.lower()
     for pattern in patterns:
         if pattern in entity_lower:
             score += 0.4
-            reason = f"pattern_match:{pattern}"
+            reasons.append(f"pattern_match:{pattern}")
             break
 
     # Check pattern matching in entity name
@@ -123,13 +123,14 @@ def _score_entity(
         for pattern in patterns:
             if pattern in name_lower:
                 score += 0.3
-                reason = f"name_match:{pattern}"
+                reasons.append(f"name_match:{pattern}")
                 break
 
     # Bonus for both slug match and pattern match
     if score >= 0.7:
         score = min(score + 0.1, 1.0)
 
+    reason = ",".join(reasons) if reasons else ""
     return (score, reason)
 
 
@@ -151,7 +152,12 @@ def discover_companion_entities(
     vacuum_slug = _get_vacuum_slug(vacuum_entity_id)
 
     # Gather all candidate entities
-    ent_reg = er.async_get(hass)
+    try:
+        from homeassistant.helpers import entity_registry as er
+        ent_reg = er.async_get(hass)
+    except Exception as err:
+        _LOGGER.warning("Vacuum Water Level: Could not access entity registry: %s", err)
+        ent_reg = None
     candidates_by_type: dict[str, list[EntityCandidate]] = {
         "cleaning": [],
         "area": [],
@@ -186,29 +192,30 @@ def discover_companion_entities(
     }
 
     # Iterate through entity registry
-    for entity_entry in ent_reg.entities.values():
-        entity_id = entity_entry.entity_id
-        domain = entity_id.split(".")[0] if "." in entity_id else ""
+    if ent_reg is not None:
+        for entity_entry in ent_reg.entities.values():
+            entity_id = entity_entry.entity_id
+            domain = entity_id.split(".")[0] if "." in entity_id else ""
 
-        for comp_type, patterns in pattern_map.items():
-            if domain not in domain_map[comp_type]:
-                continue
+            for comp_type, patterns in pattern_map.items():
+                if domain not in domain_map[comp_type]:
+                    continue
 
-            score, reason = _score_entity(
-                entity_id,
-                entity_entry.name or entity_entry.original_name,
-                patterns,
-                vacuum_slug,
-            )
-
-            if score > 0:
-                candidates_by_type[comp_type].append(
-                    EntityCandidate(
-                        entity_id=entity_id,
-                        confidence=score,
-                        reason=reason,
-                    )
+                score, reason = _score_entity(
+                    entity_id,
+                    entity_entry.name or entity_entry.original_name,
+                    patterns,
+                    vacuum_slug,
                 )
+
+                if score > 0:
+                    candidates_by_type[comp_type].append(
+                        EntityCandidate(
+                            entity_id=entity_id,
+                            confidence=score,
+                            reason=reason,
+                        )
+                    )
 
     # Also check states for entities not in registry
     all_states = hass.states.async_all()

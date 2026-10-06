@@ -118,7 +118,7 @@ class TestDiscoveryWithMockEntities:
         mock_ent_reg.entities.values.return_value = mock_entities
 
         with patch(
-            "custom_components.vacuum_water_level.discovery.er.async_get",
+            "homeassistant.helpers.entity_registry.async_get",
             return_value=mock_ent_reg,
         ):
             result = discover_companion_entities(
@@ -163,7 +163,7 @@ class TestDiscoveryWithMockEntities:
         mock_ent_reg.entities.values.return_value = mock_entities
 
         with patch(
-            "custom_components.vacuum_water_level.discovery.er.async_get",
+            "homeassistant.helpers.entity_registry.async_get",
             return_value=mock_ent_reg,
         ):
             result = discover_companion_entities(
@@ -197,7 +197,7 @@ class TestDiscoveryWithMockEntities:
         mock_ent_reg.entities.values.return_value = mock_entities
 
         with patch(
-            "custom_components.vacuum_water_level.discovery.er.async_get",
+            "homeassistant.helpers.entity_registry.async_get",
             return_value=mock_ent_reg,
         ):
             result = discover_companion_entities(
@@ -215,7 +215,7 @@ class TestDiscoveryWithMockEntities:
         mock_ent_reg.entities.values.return_value = []
 
         with patch(
-            "custom_components.vacuum_water_level.discovery.er.async_get",
+            "homeassistant.helpers.entity_registry.async_get",
             return_value=mock_ent_reg,
         ):
             result = discover_companion_entities(
@@ -243,7 +243,7 @@ class TestDiscoveryWithMockEntities:
         mock_ent_reg.entities.values.return_value = mock_entities
 
         with patch(
-            "custom_components.vacuum_water_level.discovery.er.async_get",
+            "homeassistant.helpers.entity_registry.async_get",
             return_value=mock_ent_reg,
         ):
             result = discover_companion_entities(

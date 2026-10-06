@@ -7,10 +7,11 @@ All data is stored per config entry, keyed by entry ID.
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from homeassistant.core import HomeAssistant
-from homeassistant.helpers.storage import Store
+if TYPE_CHECKING:
+    from homeassistant.core import HomeAssistant
+    from homeassistant.helpers.storage import Store
 
 from .const import STORAGE_KEY, STORAGE_VERSION, STORAGE_MINOR_VERSION
 from .learning import (
@@ -46,6 +47,7 @@ class VacuumWaterStorage:
         """
         self._hass = hass
         self._entry_id = entry_id
+        from homeassistant.helpers.storage import Store
         self._store: Store = Store(
             hass,
             STORAGE_VERSION,
