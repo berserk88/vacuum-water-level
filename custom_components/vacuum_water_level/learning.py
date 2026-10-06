@@ -100,13 +100,24 @@ class WaterModel:
         # Determine if mopping is active
         # Default to True if no mop mode entity is configured (user likely
         # has a mopping vacuum if they installed this integration)
+        # Check BOTH mop_mode and mop_intensity - if either indicates
+        # vacuum-only mode, mopping is inactive (OR condition)
         mop_active = True
+        vacuum_only_keywords = {
+            "off", "none", "stop", "vacuum", "sweep",
+            "vacuum_only", "sweep_only", "no_mop",
+            "sweeping", "vacuuming",
+        }
+
         if mop_mode is not None:
             mop_lower = str(mop_mode).lower().strip()
-            # Values that indicate vacuum-only (no mopping, no water)
-            if mop_lower in ("off", "none", "stop", "vacuum", "sweep",
-                             "vacuum_only", "sweep_only", "no_mop",
-                             "sweeping", "vacuuming"):
+            if mop_lower in vacuum_only_keywords:
+                mop_active = False
+
+        # Also check mop intensity - if it's "off", vacuum is not mopping
+        if mop_intensity is not None and mop_active:
+            intensity_lower = str(mop_intensity).lower().strip()
+            if intensity_lower in vacuum_only_keywords:
                 mop_active = False
 
         if not mop_active:

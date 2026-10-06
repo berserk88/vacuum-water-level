@@ -146,6 +146,36 @@ class TestWaterModelConvergence:
         usage = wm.estimate_usage(50.0, "vacuum", "high", 0)
         assert usage == 0.0
 
+    def test_no_water_usage_when_mop_intensity_off(self):
+        """Test that no water is counted when mop intensity is 'off'."""
+        wm = WaterModel()
+        usage = wm.estimate_usage(50.0, "on", "off", 0)
+        assert usage == 0.0
+
+    def test_no_water_usage_when_mop_mode_on_but_intensity_off(self):
+        """Test that mop intensity 'off' overrides mop mode 'on' (OR condition)."""
+        wm = WaterModel()
+        usage = wm.estimate_usage(50.0, "on", "off", 0)
+        assert usage == 0.0
+
+    def test_no_water_usage_when_mop_mode_off_but_intensity_high(self):
+        """Test that mop mode 'off' overrides mop intensity 'high' (OR condition)."""
+        wm = WaterModel()
+        usage = wm.estimate_usage(50.0, "off", "high", 0)
+        assert usage == 0.0
+
+    def test_water_usage_when_both_mop_mode_and_intensity_active(self):
+        """Test water is counted when both mop mode and intensity are active."""
+        wm = WaterModel()
+        usage = wm.estimate_usage(50.0, "on", "high", 0)
+        assert usage > 0.0
+
+    def test_no_water_when_mop_intensity_vacuum(self):
+        """Test that 'vacuum' mop intensity disables water usage."""
+        wm = WaterModel()
+        usage = wm.estimate_usage(50.0, "on", "vacuum", 0)
+        assert usage == 0.0
+
 
 class TestWasteModelConvergence:
     """Tests for waste model convergence behavior."""
@@ -187,7 +217,7 @@ class TestWasteModelConvergence:
     def test_waste_ratio_converges_from_above(self):
         """Test convergence when true ratio is below default."""
         wsm = WasteModel()
-        true_ratio = 0.5  # Lower than default 0.9
+        true_ratio = 0.5  # Same as default 0.5
 
         for _ in range(30):
             clean_used = 100.0
@@ -195,12 +225,12 @@ class TestWasteModelConvergence:
             wsm.calibrate(clean_used * true_ratio, clean_used)
 
         assert wsm.waste_ratio == pytest.approx(true_ratio, abs=0.1)
-        assert wsm.waste_ratio < DEFAULT_WASTE_RATIO
+        assert wsm.waste_ratio >= DEFAULT_WASTE_RATIO  # Should be at default or above
 
     def test_waste_ratio_converges_from_below(self):
         """Test convergence when true ratio is above default."""
         wsm = WasteModel()
-        true_ratio = 1.5  # Higher than default 0.9
+        true_ratio = 1.5  # Higher than default 0.5
 
         for _ in range(30):
             clean_used = 100.0

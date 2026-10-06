@@ -120,50 +120,34 @@ def _companion_schema(
     """Build the companion entity selection schema.
 
     Pre-fills with discovered entities but allows manual override.
+    Only sets default for entity selectors when the value is not None,
+    to avoid voluptuous validation errors.
     """
     discovered = discovered or {}
 
-    def _entity_selector(
-        domain: list[str], discovered_id: str | None = None
-    ) -> selector.EntitySelector:
+    def _entity_field(domain: list[str]) -> selector.EntitySelector:
         return selector.EntitySelector(
             selector.EntitySelectorConfig(domain=domain, multiple=False),
         )
 
-    schema_dict: dict = {
-        vol.Optional(
-            CONF_CLEANING_ENTITY,
-            default=discovered.get(CONF_CLEANING_ENTITY),
-        ): _entity_selector(["binary_sensor", "sensor"]),
-        vol.Optional(
-            CONF_AREA_ENTITY,
-            default=discovered.get(CONF_AREA_ENTITY),
-        ): _entity_selector(["sensor"]),
-        vol.Optional(
-            CONF_STATUS_ENTITY,
-            default=discovered.get(CONF_STATUS_ENTITY),
-        ): _entity_selector(["sensor"]),
-        vol.Optional(
-            CONF_MOP_MODE_ENTITY,
-            default=discovered.get(CONF_MOP_MODE_ENTITY),
-        ): _entity_selector(["select", "sensor"]),
-        vol.Optional(
-            CONF_MOP_INTENSITY_ENTITY,
-            default=discovered.get(CONF_MOP_INTENSITY_ENTITY),
-        ): _entity_selector(["select", "sensor"]),
-        vol.Optional(
-            CONF_DOCK_ERROR_ENTITY,
-            default=discovered.get(CONF_DOCK_ERROR_ENTITY),
-        ): _entity_selector(["binary_sensor", "sensor"]),
-        vol.Optional(
-            CONF_CLEAN_WATER_SENSOR,
-            default=discovered.get(CONF_CLEAN_WATER_SENSOR),
-        ): _entity_selector(["binary_sensor", "sensor"]),
-        vol.Optional(
-            CONF_DIRTY_WATER_SENSOR,
-            default=discovered.get(CONF_DIRTY_WATER_SENSOR),
-        ): _entity_selector(["binary_sensor", "sensor"]),
-    }
+    entity_fields = [
+        (CONF_CLEANING_ENTITY, ["binary_sensor", "sensor"]),
+        (CONF_AREA_ENTITY, ["sensor"]),
+        (CONF_STATUS_ENTITY, ["sensor"]),
+        (CONF_MOP_MODE_ENTITY, ["select", "sensor"]),
+        (CONF_MOP_INTENSITY_ENTITY, ["select", "sensor"]),
+        (CONF_DOCK_ERROR_ENTITY, ["binary_sensor", "sensor"]),
+        (CONF_CLEAN_WATER_SENSOR, ["binary_sensor", "sensor"]),
+        (CONF_DIRTY_WATER_SENSOR, ["binary_sensor", "sensor"]),
+    ]
+
+    schema_dict: dict = {}
+    for key, domain in entity_fields:
+        val = discovered.get(key)
+        if val is not None:
+            schema_dict[vol.Optional(key, default=val)] = _entity_field(domain)
+        else:
+            schema_dict[vol.Optional(key)] = _entity_field(domain)
 
     return vol.Schema(schema_dict)
 
@@ -323,119 +307,82 @@ class VacuumWaterLevelOptionsFlow(config_entries.OptionsFlow):
     ) -> FlowResult:
         """Manage the options."""
         if user_input is not None:
-            return self.async_create_entry(title="", data=user_input)
+            # Filter out empty string values (cleared entity selectors)
+            cleaned = {k: v for k, v in user_input.items() if v}
+            return self.async_create_entry(title="", data=cleaned)
 
         # Build schema from current options/data
         current_options = {**self.config_entry.data, **self.config_entry.options}
 
-        schema = vol.Schema(
-            {
-                vol.Optional(
-                    CONF_CLEAN_TANK_CAPACITY,
-                    default=current_options.get(
-                        CONF_CLEAN_TANK_CAPACITY, DEFAULT_CLEAN_TANK_CAPACITY
-                    ),
-                ): selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=10, max=5000, step=1, mode=selector.NumberSelectorMode.BOX
-                    )
+        def _entity_field(domain: list[str]) -> selector.EntitySelector:
+            return selector.EntitySelector(
+                selector.EntitySelectorConfig(domain=domain, multiple=False)
+            )
+
+        # Numeric fields with safe defaults
+        schema_dict: dict = {
+            vol.Optional(
+                CONF_CLEAN_TANK_CAPACITY,
+                default=current_options.get(
+                    CONF_CLEAN_TANK_CAPACITY, DEFAULT_CLEAN_TANK_CAPACITY
                 ),
-                vol.Optional(
-                    CONF_DIRTY_TANK_CAPACITY,
-                    default=current_options.get(
-                        CONF_DIRTY_TANK_CAPACITY, DEFAULT_DIRTY_TANK_CAPACITY
-                    ),
-                ): selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=10, max=5000, step=1, mode=selector.NumberSelectorMode.BOX
-                    )
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=10, max=5000, step=1, mode=selector.NumberSelectorMode.BOX
+                )
+            ),
+            vol.Optional(
+                CONF_DIRTY_TANK_CAPACITY,
+                default=current_options.get(
+                    CONF_DIRTY_TANK_CAPACITY, DEFAULT_DIRTY_TANK_CAPACITY
                 ),
-                vol.Optional(
-                    CONF_WATER_LOW_THRESHOLD,
-                    default=current_options.get(
-                        CONF_WATER_LOW_THRESHOLD, DEFAULT_WATER_LOW_THRESHOLD
-                    ),
-                ): selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=1, max=50, step=1, mode=selector.NumberSelectorMode.BOX
-                    )
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=10, max=5000, step=1, mode=selector.NumberSelectorMode.BOX
+                )
+            ),
+            vol.Optional(
+                CONF_WATER_LOW_THRESHOLD,
+                default=current_options.get(
+                    CONF_WATER_LOW_THRESHOLD, DEFAULT_WATER_LOW_THRESHOLD
                 ),
-                vol.Optional(
-                    CONF_WASTE_FULL_THRESHOLD,
-                    default=current_options.get(
-                        CONF_WASTE_FULL_THRESHOLD, DEFAULT_WASTE_FULL_THRESHOLD
-                    ),
-                ): selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=50, max=99, step=1, mode=selector.NumberSelectorMode.BOX
-                    )
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=1, max=50, step=1, mode=selector.NumberSelectorMode.BOX
+                )
+            ),
+            vol.Optional(
+                CONF_WASTE_FULL_THRESHOLD,
+                default=current_options.get(
+                    CONF_WASTE_FULL_THRESHOLD, DEFAULT_WASTE_FULL_THRESHOLD
                 ),
-                vol.Optional(
-                    CONF_CLEANING_ENTITY,
-                    default=current_options.get(CONF_CLEANING_ENTITY),
-                ): selector.EntitySelector(
-                    selector.EntitySelectorConfig(
-                        domain=["binary_sensor", "sensor"], multiple=False
-                    )
-                ),
-                vol.Optional(
-                    CONF_AREA_ENTITY,
-                    default=current_options.get(CONF_AREA_ENTITY),
-                ): selector.EntitySelector(
-                    selector.EntitySelectorConfig(
-                        domain=["sensor"], multiple=False
-                    )
-                ),
-                vol.Optional(
-                    CONF_STATUS_ENTITY,
-                    default=current_options.get(CONF_STATUS_ENTITY),
-                ): selector.EntitySelector(
-                    selector.EntitySelectorConfig(
-                        domain=["sensor"], multiple=False
-                    )
-                ),
-                vol.Optional(
-                    CONF_MOP_MODE_ENTITY,
-                    default=current_options.get(CONF_MOP_MODE_ENTITY),
-                ): selector.EntitySelector(
-                    selector.EntitySelectorConfig(
-                        domain=["select", "sensor"], multiple=False
-                    )
-                ),
-                vol.Optional(
-                    CONF_MOP_INTENSITY_ENTITY,
-                    default=current_options.get(CONF_MOP_INTENSITY_ENTITY),
-                ): selector.EntitySelector(
-                    selector.EntitySelectorConfig(
-                        domain=["select", "sensor"], multiple=False
-                    )
-                ),
-                vol.Optional(
-                    CONF_DOCK_ERROR_ENTITY,
-                    default=current_options.get(CONF_DOCK_ERROR_ENTITY),
-                ): selector.EntitySelector(
-                    selector.EntitySelectorConfig(
-                        domain=["binary_sensor", "sensor"], multiple=False
-                    )
-                ),
-                vol.Optional(
-                    CONF_CLEAN_WATER_SENSOR,
-                    default=current_options.get(CONF_CLEAN_WATER_SENSOR),
-                ): selector.EntitySelector(
-                    selector.EntitySelectorConfig(
-                        domain=["binary_sensor", "sensor"], multiple=False
-                    )
-                ),
-                vol.Optional(
-                    CONF_DIRTY_WATER_SENSOR,
-                    default=current_options.get(CONF_DIRTY_WATER_SENSOR),
-                ): selector.EntitySelector(
-                    selector.EntitySelectorConfig(
-                        domain=["binary_sensor", "sensor"], multiple=False
-                    )
-                ),
-            }
-        )
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=50, max=99, step=1, mode=selector.NumberSelectorMode.BOX
+                )
+            ),
+        }
+
+        # Entity fields - only set default when value is not None
+        entity_fields = [
+            (CONF_CLEANING_ENTITY, ["binary_sensor", "sensor"]),
+            (CONF_AREA_ENTITY, ["sensor"]),
+            (CONF_STATUS_ENTITY, ["sensor"]),
+            (CONF_MOP_MODE_ENTITY, ["select", "sensor"]),
+            (CONF_MOP_INTENSITY_ENTITY, ["select", "sensor"]),
+            (CONF_DOCK_ERROR_ENTITY, ["binary_sensor", "sensor"]),
+            (CONF_CLEAN_WATER_SENSOR, ["binary_sensor", "sensor"]),
+            (CONF_DIRTY_WATER_SENSOR, ["binary_sensor", "sensor"]),
+        ]
+
+        for key, domain in entity_fields:
+            val = current_options.get(key)
+            if val:
+                schema_dict[vol.Optional(key, default=val)] = _entity_field(domain)
+            else:
+                schema_dict[vol.Optional(key)] = _entity_field(domain)
+
+        schema = vol.Schema(schema_dict)
 
         return self.async_show_form(
             step_id="init",

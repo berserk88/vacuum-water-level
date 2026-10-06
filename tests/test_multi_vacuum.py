@@ -115,7 +115,7 @@ class TestMultiVacuumIsolation:
         # Vacuum 2 should have default waste model
         wsm2 = storage2.get_waste_model()
         assert wsm2.cycles_observed == 0
-        assert wsm2.waste_ratio == 0.9  # default
+        assert wsm2.waste_ratio == 0.5  # default
 
     @pytest.mark.asyncio
     async def test_different_capacities_per_vacuum(self, mock_hass):

@@ -129,7 +129,7 @@ class VacuumWaterStorage:
             if "correction_factors" not in wsm:
                 wsm["correction_factors"] = {}
             if "waste_ratio" not in wsm["correction_factors"]:
-                wsm["correction_factors"]["waste_ratio"] = 0.9
+                wsm["correction_factors"]["waste_ratio"] = 0.5
 
             # Ensure reserve_learning has all fields
             rl = data["reserve_learning"]
