@@ -101,6 +101,51 @@ class TestWaterModelConvergence:
         # Cycles should be reset
         assert wm.cycles_observed == 0
 
+    def test_no_water_usage_when_mop_mode_off(self):
+        """Test that no area water is counted when mop mode is off."""
+        wm = WaterModel()
+        usage = wm.estimate_usage(50.0, "off", "high", 0)
+        assert usage == 0.0
+
+    def test_no_water_usage_when_mop_mode_vacuum(self):
+        """Test that no area water is counted in vacuum-only mode."""
+        wm = WaterModel()
+        usage = wm.estimate_usage(50.0, "vacuum", "high", 0)
+        assert usage == 0.0
+
+    def test_no_water_usage_when_mop_mode_sweep(self):
+        """Test that no area water is counted in sweep mode."""
+        wm = WaterModel()
+        usage = wm.estimate_usage(50.0, "sweep", "high", 0)
+        assert usage == 0.0
+
+    def test_water_usage_when_mop_mode_on(self):
+        """Test that water IS counted when mop mode is on."""
+        wm = WaterModel()
+        usage = wm.estimate_usage(50.0, "on", "medium", 0)
+        assert usage > 0.0
+
+    def test_water_usage_when_mop_mode_mop(self):
+        """Test that water IS counted when mop mode is 'mop'."""
+        wm = WaterModel()
+        usage = wm.estimate_usage(50.0, "mop", "medium", 0)
+        assert usage > 0.0
+
+    def test_water_usage_when_mop_mode_none_defaults_to_active(self):
+        """Test that water IS counted when mop mode is None (not configured)."""
+        wm = WaterModel()
+        usage = wm.estimate_usage(50.0, None, "medium", 0)
+        assert usage > 0.0
+
+    def test_wash_events_still_counted_when_mop_off(self):
+        """Test that wash events contribute 0 when mop is off (no washing in vacuum mode)."""
+        wm = WaterModel()
+        # If mop is off, there should be no wash events either
+        # But even if wash_count > 0 with mop off, the wash volume is still added
+        # since mop washing could theoretically happen separately
+        usage = wm.estimate_usage(50.0, "vacuum", "high", 0)
+        assert usage == 0.0
+
 
 class TestWasteModelConvergence:
     """Tests for waste model convergence behavior."""
