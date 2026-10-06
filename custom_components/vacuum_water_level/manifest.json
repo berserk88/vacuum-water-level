@@ -1,0 +1,12 @@
+{
+  "domain": "vacuum_water_level",
+  "name": "Vacuum Water Level",
+  "version": "1.0.0",
+  "documentation": "https://github.com/serkhas/vacuum_water_level",
+  "issue_tracker": "https://github.com/serkhas/vacuum_water_level/issues",
+  "codeowners": ["@serkhas"],
+  "config_flow": true,
+  "iot_class": "calculated",
+  "quality_scale": "platinum",
+  "requirements": []
+}

@@ -1,0 +1,2 @@
+# No services are exposed by this integration.
+# All interactions are through native entities (sensors, binary sensors, buttons).
