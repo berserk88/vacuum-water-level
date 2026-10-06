@@ -16,7 +16,6 @@ import voluptuous as vol
 
 from homeassistant import config_entries
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers import selector
 from homeassistant.helpers.entity_registry import async_get as async_get_entity_registry
 
@@ -39,7 +38,6 @@ from .const import (
     DEFAULT_WATER_LOW_THRESHOLD,
     DEFAULT_WASTE_FULL_THRESHOLD,
     DOMAIN,
-    SUPPORTED_VENDORS,
 )
 from .discovery import discover_companion_entities
 
@@ -48,78 +46,89 @@ _LOGGER = logging.getLogger(__name__)
 
 def _get_vacuum_entities(hass: HomeAssistant) -> list[selector.SelectOptionDict]:
     """Get all vacuum entities for the selector."""
-    ent_reg = async_get_entity_registry(hass)
-    options = []
-    for entity in ent_reg.entities.values():
-        if entity.domain == "vacuum":
-            state = hass.states.get(entity.entity_id)
-            name = entity.name or entity.original_name or (
-                state.name if state else entity.entity_id
-            )
-            options.append(
-                selector.SelectOptionDict(
-                    value=entity.entity_id,
-                    label=f"{name} ({entity.entity_id})",
-                )
-            )
+    try:
+        ent_reg = async_get_entity_registry(hass)
+    except Exception as err:
+        _LOGGER.error("Vacuum Water Level: Failed to get entity registry: %s", err)
+        ent_reg = None
 
-    # Also check states for vacuum entities not in registry
-    for state in hass.states.async_all():
-        if state.entity_id.startswith("vacuum."):
-            if not any(o["value"] == state.entity_id for o in options):
+    options: list[selector.SelectOptionDict] = []
+
+    if ent_reg is not None:
+        for entity in ent_reg.entities.values():
+            if entity.domain == "vacuum":
+                state = hass.states.get(entity.entity_id)
+                name = entity.name or entity.original_name or (
+                    state.name if state else entity.entity_id
+                )
                 options.append(
                     selector.SelectOptionDict(
-                        value=state.entity_id,
-                        label=f"{state.name} ({state.entity_id})",
+                        value=entity.entity_id,
+                        label=f"{name} ({entity.entity_id})",
                     )
                 )
+
+    # Also check states for vacuum entities not in registry
+    try:
+        for state in hass.states.async_all():
+            if state.entity_id.startswith("vacuum."):
+                if not any(o["value"] == state.entity_id for o in options):
+                    options.append(
+                        selector.SelectOptionDict(
+                            value=state.entity_id,
+                            label=f"{state.name} ({state.entity_id})",
+                        )
+                    )
+    except Exception as err:
+        _LOGGER.error("Vacuum Water Level: Failed to get vacuum states: %s", err)
 
     return sorted(options, key=lambda x: x["label"])
 
 
-STEP_USER_DATA_SCHEMA = vol.Schema(
-    {
-        vol.Required(CONF_VACUUM_ENTITY): selector.EntitySelector(
-            selector.EntitySelectorConfig(domain="vacuum"),
-        ),
-        vol.Required(
-            CONF_CLEAN_TANK_CAPACITY, default=DEFAULT_CLEAN_TANK_CAPACITY
-        ): selector.NumberSelector(
-            selector.NumberSelectorConfig(
-                min=10, max=5000, step=1, mode=selector.NumberSelectorMode.BOX
-            )
-        ),
-        vol.Required(
-            CONF_DIRTY_TANK_CAPACITY, default=DEFAULT_DIRTY_TANK_CAPACITY
-        ): selector.NumberSelector(
-            selector.NumberSelectorConfig(
-                min=10, max=5000, step=1, mode=selector.NumberSelectorMode.BOX
-            )
-        ),
-        vol.Optional(
-            CONF_WATER_LOW_THRESHOLD, default=DEFAULT_WATER_LOW_THRESHOLD
-        ): selector.NumberSelector(
-            selector.NumberSelectorConfig(
-                min=1, max=50, step=1, mode=selector.NumberSelectorMode.BOX
-            )
-        ),
-        vol.Optional(
-            CONF_WASTE_FULL_THRESHOLD, default=DEFAULT_WASTE_FULL_THRESHOLD
-        ): selector.NumberSelector(
-            selector.NumberSelectorConfig(
-                min=50, max=99, step=1, mode=selector.NumberSelectorMode.BOX
-            )
-        ),
-    }
-)
+def _build_user_schema() -> vol.Schema:
+    """Build the schema for the initial user step."""
+    return vol.Schema(
+        {
+            vol.Required(CONF_VACUUM_ENTITY): selector.EntitySelector(
+                selector.EntitySelectorConfig(domain=["vacuum"]),
+            ),
+            vol.Required(
+                CONF_CLEAN_TANK_CAPACITY, default=DEFAULT_CLEAN_TANK_CAPACITY
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=10, max=5000, step=1, mode=selector.NumberSelectorMode.BOX
+                )
+            ),
+            vol.Required(
+                CONF_DIRTY_TANK_CAPACITY, default=DEFAULT_DIRTY_TANK_CAPACITY
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=10, max=5000, step=1, mode=selector.NumberSelectorMode.BOX
+                )
+            ),
+            vol.Optional(
+                CONF_WATER_LOW_THRESHOLD, default=DEFAULT_WATER_LOW_THRESHOLD
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=1, max=50, step=1, mode=selector.NumberSelectorMode.BOX
+                )
+            ),
+            vol.Optional(
+                CONF_WASTE_FULL_THRESHOLD, default=DEFAULT_WASTE_FULL_THRESHOLD
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=50, max=99, step=1, mode=selector.NumberSelectorMode.BOX
+                )
+            ),
+        }
+    )
 
 
-def _companion_schema(
+def _build_companion_schema(
     discovered: dict[str, Any] | None = None,
 ) -> vol.Schema:
     """Build the companion entity selection schema.
 
-    Pre-fills with discovered entities but allows manual override.
     Only sets default for entity selectors when the value is not None,
     to avoid voluptuous validation errors.
     """
@@ -166,7 +175,7 @@ class VacuumWaterLevelConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
+    ) -> Any:
         """Handle the initial step: select vacuum and capacities."""
         errors: dict[str, str] = {}
 
@@ -225,19 +234,15 @@ class VacuumWaterLevelConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         return self.async_show_form(
             step_id="user",
-            data_schema=STEP_USER_DATA_SCHEMA,
+            data_schema=_build_user_schema(),
             errors=errors,
-            description_placeholders={
-                "vacuum_count": str(len(vacuum_options)),
-            },
         )
 
     async def async_step_companion(
         self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
+    ) -> Any:
         """Handle the companion entity selection step."""
         if user_input is not None:
-            # Merge user data with initial data
             config_data = {
                 CONF_VACUUM_ENTITY: self._vacuum_entity,
                 CONF_CLEAN_TANK_CAPACITY: self._user_input.get(
@@ -270,7 +275,7 @@ class VacuumWaterLevelConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             )
 
         # Build schema with discovered defaults
-        schema = _companion_schema(self._discovered_entities)
+        schema = _build_companion_schema(self._discovered_entities)
 
         # Build description placeholders for discovery info
         discovery_info = ""
@@ -304,7 +309,7 @@ class VacuumWaterLevelOptionsFlow(config_entries.OptionsFlow):
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
+    ) -> Any:
         """Manage the options."""
         if user_input is not None:
             # Filter out empty string values (cleared entity selectors)
