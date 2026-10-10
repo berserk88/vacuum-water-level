@@ -2,75 +2,111 @@
   "config": {
     "step": {
       "user": {
-        "title": "Configure Vacuum Water Level",
-        "description": "Select your robot vacuum and tank specifications.",
+        "title": "Set Up Vacuum Water Level",
+        "description": "Select your robot vacuum and configure tank capacities. The integration will estimate water levels without additional hardware.",
         "data": {
-          "vacuum_entity": "Vacuum Entity",
-          "clean_tank_capacity_ml": "Clean Water Tank Capacity (mL)",
-          "dirty_tank_capacity_ml": "Dirty/Waste Water Tank Capacity (mL)",
-          "water_low_threshold": "Water Low Alert Threshold (%)",
-          "waste_full_threshold": "Waste Tank Full Alert Threshold (%)"
+          "vacuum_entity": "Vacuum entity",
+          "clean_tank_capacity_ml": "Clean water tank capacity (mL)",
+          "dirty_tank_capacity_ml": "Dirty water tank capacity (mL)",
+          "water_low_threshold": "Water low warning threshold (%)",
+          "waste_full_threshold": "Waste tank full threshold (%)"
         }
       },
       "companion": {
-        "title": "Companion Entity Setup",
-        "description": "Select optional companion entities for automatic event tracking.",
+        "title": "Companion Entity Discovery",
+        "description": "Companion entities have been auto-discovered. You can keep the discovered values or override any of them.\n\nDiscovered entities:\n{discovery_info}",
         "data": {
-          "cleaning_entity": "Cleaning Binary Sensor",
-          "area_entity": "Cleaned Area Sensor (m²)",
-          "status_entity": "Status Sensor",
-          "mop_mode_entity": "Mop Mode Select/Switch",
-          "mop_intensity_entity": "Mop Water Intensity Select",
-          "dock_error_entity": "Dock Error/Warning Sensor",
-          "clean_water_sensor": "Clean Water Box Low Sensor",
-          "dirty_water_sensor": "Dirty Water Box Full Sensor"
+          "cleaning_entity": "Cleaning binary sensor",
+          "area_entity": "Cleaned area sensor",
+          "status_entity": "Status sensor",
+          "mop_mode_entity": "Mop mode entity",
+          "mop_intensity_entity": "Mop intensity entity",
+          "dock_error_entity": "Dock error sensor",
+          "clean_water_sensor": "Clean water box sensor",
+          "dirty_water_sensor": "Dirty water box sensor"
         }
       }
+    },
+    "error": {
+      "already_configured": "This vacuum is already configured for water level tracking."
+    },
+    "abort": {
+      "no_vacuums": "No vacuum entities found in Home Assistant. Please add a vacuum integration first."
     }
   },
   "options": {
     "step": {
       "init": {
         "title": "Vacuum Water Level Options",
-        "description": "Update tank capacities or entity mappings.",
+        "description": "Edit tank capacities, thresholds, and companion entities.",
         "data": {
-          "clean_tank_capacity_ml": "Clean Water Tank Capacity (mL)",
-          "dirty_tank_capacity_ml": "Dirty/Waste Water Tank Capacity (mL)",
-          "water_low_threshold": "Water Low Alert Threshold (%)",
-          "waste_full_threshold": "Waste Tank Full Alert Threshold (%)",
-          "cleaning_entity": "Cleaning Binary Sensor",
-          "area_entity": "Cleaned Area Sensor (m²)",
-          "status_entity": "Status Sensor",
-          "mop_mode_entity": "Mop Mode Select/Switch",
-          "mop_intensity_entity": "Mop Water Intensity Select",
-          "dock_error_entity": "Dock Error/Warning Sensor",
-          "clean_water_sensor": "Clean Water Box Low Sensor",
-          "dirty_water_sensor": "Dirty Water Box Full Sensor"
+          "clean_tank_capacity_ml": "Clean water tank capacity (mL)",
+          "dirty_tank_capacity_ml": "Dirty water tank capacity (mL)",
+          "water_low_threshold": "Water low warning threshold (%)",
+          "waste_full_threshold": "Waste tank full threshold (%)",
+          "cleaning_entity": "Cleaning binary sensor",
+          "area_entity": "Cleaned area sensor",
+          "status_entity": "Status sensor",
+          "mop_mode_entity": "Mop mode entity",
+          "mop_intensity_entity": "Mop intensity entity",
+          "dock_error_entity": "Dock error sensor",
+          "clean_water_sensor": "Clean water box sensor",
+          "dirty_water_sensor": "Dirty water box sensor"
         }
       }
     }
   },
   "entity": {
     "sensor": {
-      "water_remaining_pct": { "name": "Clean Water Remaining" },
-      "water_remaining_ml": { "name": "Clean Water Remaining Volume" },
-      "water_used_since_refill": { "name": "Water Used Since Refill" },
-      "waste_tank_pct": { "name": "Waste Tank Fill" },
-      "waste_tank_ml": { "name": "Waste Tank Fill Volume" },
-      "water_consumption_rate": { "name": "Water Consumption Rate" },
-      "dirty_water_fill_rate": { "name": "Dirty Water Fill Rate" },
-      "last_refill": { "name": "Last Refill" },
-      "last_waste_empty": { "name": "Last Waste Tank Empty" },
-      "prediction_diagnostics": { "name": "Water Level Prediction Diagnostics" }
+      "water_remaining_pct": {
+        "name": "Water Remaining"
+      },
+      "water_remaining_ml": {
+        "name": "Water Remaining Volume"
+      },
+      "water_used_since_refill": {
+        "name": "Water Used Since Refill"
+      },
+      "waste_tank_pct": {
+        "name": "Waste Tank Level"
+      },
+      "waste_tank_ml": {
+        "name": "Waste Tank Volume"
+      },
+      "water_consumption_rate": {
+        "name": "Water Consumption Rate"
+      },
+      "dirty_water_fill_rate": {
+        "name": "Dirty Water Fill Rate"
+      },
+      "last_refill": {
+        "name": "Last Refill"
+      },
+      "last_waste_empty": {
+        "name": "Last Waste Empty"
+      },
+      "prediction_diagnostics": {
+        "name": "Prediction Diagnostics"
+      }
     },
     "binary_sensor": {
-      "water_low": { "name": "Clean Water Low" },
-      "waste_tank_full": { "name": "Waste Tank Full" }
+      "water_low": {
+        "name": "Water Low"
+      },
+      "waste_tank_full": {
+        "name": "Waste Tank Full"
+      }
     },
     "button": {
-      "refilled": { "name": "Refilled Clean Water Tank" },
-      "waste_tank_emptied": { "name": "Emptied Waste Water Tank" },
-      "clear_prediction_model": { "name": "Clear Prediction Model" }
+      "refilled": {
+        "name": "Refilled"
+      },
+      "waste_tank_emptied": {
+        "name": "Waste Tank Emptied"
+      },
+      "clear_prediction_model": {
+        "name": "Clear Prediction Model"
+      }
     }
   }
 }

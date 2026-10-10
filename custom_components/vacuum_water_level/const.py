@@ -5,7 +5,7 @@ DOMAIN = "vacuum_water_level"
 # Storage
 STORAGE_KEY = "vacuum_water_level"
 STORAGE_VERSION = 1
-STORAGE_MINOR_VERSION = 2
+STORAGE_MINOR_VERSION = 1
 
 # Config flow keys
 CONF_VACUUM_ENTITY = "vacuum_entity"
@@ -25,8 +25,8 @@ CONF_CLEAN_WATER_SENSOR = "clean_water_sensor"
 CONF_DIRTY_WATER_SENSOR = "dirty_water_sensor"
 
 # Defaults
-DEFAULT_CLEAN_TANK_CAPACITY = 3000
-DEFAULT_DIRTY_TANK_CAPACITY = 2500
+DEFAULT_CLEAN_TANK_CAPACITY = 250
+DEFAULT_DIRTY_TANK_CAPACITY = 250
 DEFAULT_WATER_LOW_THRESHOLD = 15
 DEFAULT_WASTE_FULL_THRESHOLD = 85
 DEFAULT_BASE_ML_PER_M2 = 2.0
@@ -82,7 +82,7 @@ KEY_LAST_MOP_MODE = "last_mop_mode"
 KEY_LAST_MOP_INTENSITY = "last_mop_intensity"
 KEY_WASH_COUNT = "wash_count"
 
-# Supported vendors
+# Vendor list
 SUPPORTED_VENDORS = [
     "Roborock",
     "Dreame",

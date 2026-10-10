@@ -1,58 +1,86 @@
-"""The Vacuum Water Level integration."""
+"""The Vacuum Water Level integration.
+
+Estimates clean water tank level and dirty/waste water tank fill level for
+robot vacuums that do not expose actual tank levels. Uses adaptive learning
+to improve estimates over time.
+
+One config entry per vacuum. Each entry has its own storage, models, and entities.
+"""
 
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING
 
-from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import Platform
-from homeassistant.core import HomeAssistant
-
-from .const import DOMAIN
-from .coordinator import VacuumWaterLevelCoordinator
-from .storage import VacuumWaterStorage
+if TYPE_CHECKING:
+    from homeassistant.config_entries import ConfigEntry
+    from homeassistant.core import HomeAssistant
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS: list[Platform] = [
-    Platform.SENSOR,
-    Platform.BINARY_SENSOR,
-    Platform.BUTTON,
-]
+PLATFORMS = ["sensor", "binary_sensor", "button"]
 
 
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Set up Vacuum Water Level from a config entry."""
-    hass.data.setdefault(DOMAIN, {})
+async def async_setup_entry(hass, config_entry) -> bool:
+    """Set up Vacuum Water Level from a config entry.
 
-    storage = VacuumWaterStorage(hass, entry.entry_id)
+    Creates a storage instance and coordinator for this vacuum, then
+    forwards setup to the entity platforms.
+    """
+    from .const import DOMAIN
+    from .coordinator import VacuumWaterLevelCoordinator
+    from .storage import VacuumWaterStorage
+
+    _LOGGER.debug(
+        "Vacuum Water Level: Setting up entry %s for vacuum %s",
+        config_entry.entry_id,
+        config_entry.data.get("vacuum_entity"),
+    )
+
+    # Initialize storage
+    storage = VacuumWaterStorage(hass, config_entry.entry_id)
     await storage.async_load()
 
-    coordinator = VacuumWaterLevelCoordinator(hass, entry, storage)
+    # Create coordinator
+    coordinator = VacuumWaterLevelCoordinator(hass, config_entry, storage)
+
+    # Set up coordinator (subscribe to state changes)
     await coordinator.async_setup()
 
-    hass.data[DOMAIN][entry.entry_id] = coordinator
+    # Store coordinator and storage in hass data
+    hass.data.setdefault(DOMAIN, {})[config_entry.entry_id] = coordinator
 
-    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-
-    entry.async_on_unload(entry.add_update_listener(update_listener))
+    # Forward to platforms
+    await hass.config_entries.async_forward_entry_setups(config_entry, PLATFORMS)
 
     return True
 
 
-async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Unload a config entry."""
-    coordinator: VacuumWaterLevelCoordinator = hass.data[DOMAIN][entry.entry_id]
-    await coordinator.async_unload()
+async def async_unload_entry(hass, config_entry) -> bool:
+    """Unload a Vacuum Water Level config entry.
 
-    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    Shuts down the coordinator, saves final state, and unloads platforms.
+    """
+    from .const import DOMAIN
+    from .coordinator import VacuumWaterLevelCoordinator
+
+    coordinator: VacuumWaterLevelCoordinator = hass.data[DOMAIN][config_entry.entry_id]
+
+    # Shut down coordinator (unsubscribes and persists)
+    await coordinator.async_shutdown()
+
+    # Unload platforms
+    unload_ok = await hass.config_entries.async_unload_platforms(
+        config_entry, PLATFORMS
+    )
+
     if unload_ok:
-        hass.data[DOMAIN].pop(entry.entry_id)
+        hass.data[DOMAIN].pop(config_entry.entry_id)
 
     return unload_ok
 
 
-async def update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Handle options update."""
-    await hass.config_entries.async_reload(entry.entry_id)
+async def async_reload_entry(hass, config_entry) -> None:
+    """Reload a Vacuum Water Level config entry."""
+    await async_unload_entry(hass, config_entry)
+    await async_setup_entry(hass, config_entry)

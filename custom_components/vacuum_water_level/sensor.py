@@ -1,8 +1,20 @@
-"""Sensor platform for Vacuum Water Level integration."""
+"""Sensor platform for Vacuum Water Level integration.
+
+Creates sensors for:
+    - Water remaining percentage
+    - Water remaining mL
+    - Water used since refill
+    - Waste tank percentage
+    - Waste tank mL
+    - Last refill timestamp
+    - Last waste empty timestamp
+    - Prediction diagnostics
+"""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import json
+from datetime import datetime
 from typing import Any
 
 from homeassistant.components.sensor import (
@@ -11,123 +23,108 @@ from homeassistant.components.sensor import (
     SensorEntityDescription,
     SensorStateClass,
 )
-from homeassistant.const import PERCENTAGE, UnitOfVolume
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.config_entries import ConfigEntry
 
 from .const import (
     DOMAIN,
-    SENSOR_WATER_REMAINING_PCT,
-    SENSOR_WATER_REMAINING_ML,
-    SENSOR_WATER_USED_SINCE_REFILL,
-    SENSOR_WASTE_TANK_PCT,
-    SENSOR_WASTE_TANK_ML,
-    SENSOR_WATER_CONSUMPTION_RATE,
-    SENSOR_DIRTY_WATER_FILL_RATE,
     SENSOR_LAST_REFILL,
     SENSOR_LAST_WASTE_EMPTY,
     SENSOR_PREDICTION_DIAGNOSTICS,
+    SENSOR_WATER_CONSUMPTION_RATE,
+    SENSOR_DIRTY_WATER_FILL_RATE,
+    SENSOR_WATER_REMAINING_ML,
+    SENSOR_WATER_REMAINING_PCT,
+    SENSOR_WATER_USED_SINCE_REFILL,
+    SENSOR_WASTE_TANK_ML,
+    SENSOR_WASTE_TANK_PCT,
 )
 from .coordinator import VacuumWaterLevelCoordinator
-from .entity import VacuumWaterLevelBaseEntity
+from .entity import VacuumWaterLevelEntity
 
-
-@dataclass(frozen=True, kw_only=True)
-class VacuumWaterSensorEntityDescription(SensorEntityDescription):
-    """Description for vacuum water level sensor entities."""
-
-    value_key: str
-
-
-SENSOR_DESCRIPTIONS: tuple[VacuumWaterSensorEntityDescription, ...] = (
-    VacuumWaterSensorEntityDescription(
+SENSOR_DESCRIPTIONS = [
+    SensorEntityDescription(
         key=SENSOR_WATER_REMAINING_PCT,
-        value_key="water_remaining_pct",
-        translation_key="water_remaining_pct",
-        native_unit_of_measurement=PERCENTAGE,
+        name="Water Remaining",
+        device_class=SensorDeviceClass.BATTERY,
         state_class=SensorStateClass.MEASUREMENT,
+        native_unit_of_measurement="%",
         icon="mdi:water-percent",
     ),
-    VacuumWaterSensorEntityDescription(
+    SensorEntityDescription(
         key=SENSOR_WATER_REMAINING_ML,
-        value_key="water_remaining_ml",
-        translation_key="water_remaining_ml",
-        native_unit_of_measurement=UnitOfVolume.MILLILITERS,
-        device_class=SensorDeviceClass.WATER,
+        name="Water Remaining Volume",
+        device_class=SensorDeviceClass.VOLUME,
         state_class=SensorStateClass.MEASUREMENT,
+        native_unit_of_measurement="mL",
         icon="mdi:water",
     ),
-    VacuumWaterSensorEntityDescription(
+    SensorEntityDescription(
         key=SENSOR_WATER_USED_SINCE_REFILL,
-        value_key="water_used_since_refill",
-        translation_key="water_used_since_refill",
-        native_unit_of_measurement=UnitOfVolume.MILLILITERS,
-        state_class=SensorStateClass.TOTAL_INCREASING,
+        name="Water Used Since Refill",
+        device_class=SensorDeviceClass.VOLUME,
+        state_class=SensorStateClass.MEASUREMENT,
+        native_unit_of_measurement="mL",
         icon="mdi:water-minus",
     ),
-    VacuumWaterSensorEntityDescription(
+    SensorEntityDescription(
         key=SENSOR_WASTE_TANK_PCT,
-        value_key="waste_tank_pct",
-        translation_key="waste_tank_pct",
-        native_unit_of_measurement=PERCENTAGE,
+        name="Waste Tank Level",
+        device_class=SensorDeviceClass.BATTERY,
         state_class=SensorStateClass.MEASUREMENT,
-        icon="mdi:water-alert-outline",
+        native_unit_of_measurement="%",
+        icon="mdi:trash-can-outline",
     ),
-    VacuumWaterSensorEntityDescription(
+    SensorEntityDescription(
         key=SENSOR_WASTE_TANK_ML,
-        value_key="waste_tank_ml",
-        translation_key="waste_tank_ml",
-        native_unit_of_measurement=UnitOfVolume.MILLILITERS,
+        name="Waste Tank Volume",
+        device_class=SensorDeviceClass.VOLUME,
         state_class=SensorStateClass.MEASUREMENT,
-        icon="mdi:water-boiler",
+        native_unit_of_measurement="mL",
+        icon="mdi:trash-can",
     ),
-    VacuumWaterSensorEntityDescription(
+    SensorEntityDescription(
+        key=SENSOR_LAST_REFILL,
+        name="Last Refill",
+        device_class=SensorDeviceClass.TIMESTAMP,
+        icon="mdi:water-plus",
+    ),
+    SensorEntityDescription(
+        key=SENSOR_LAST_WASTE_EMPTY,
+        name="Last Waste Empty",
+        device_class=SensorDeviceClass.TIMESTAMP,
+        icon="mdi:trash-can-remove",
+    ),
+    SensorEntityDescription(
         key=SENSOR_WATER_CONSUMPTION_RATE,
-        value_key="water_consumption_rate",
-        translation_key="water_consumption_rate",
+        name="Water Consumption Rate",
         native_unit_of_measurement="mL/m²",
         state_class=SensorStateClass.MEASUREMENT,
         icon="mdi:water-speed",
     ),
-    VacuumWaterSensorEntityDescription(
+    SensorEntityDescription(
         key=SENSOR_DIRTY_WATER_FILL_RATE,
-        value_key="dirty_water_fill_rate",
-        translation_key="dirty_water_fill_rate",
+        name="Dirty Water Fill Rate",
         native_unit_of_measurement="mL/m²",
         state_class=SensorStateClass.MEASUREMENT,
         icon="mdi:water-pump",
     ),
-    VacuumWaterSensorEntityDescription(
-        key=SENSOR_LAST_REFILL,
-        value_key="last_refill",
-        translation_key="last_refill",
-        device_class=SensorDeviceClass.TIMESTAMP,
-        icon="mdi:clock-check-outline",
-    ),
-    VacuumWaterSensorEntityDescription(
-        key=SENSOR_LAST_WASTE_EMPTY,
-        value_key="last_waste_empty",
-        translation_key="last_waste_empty",
-        device_class=SensorDeviceClass.TIMESTAMP,
-        icon="mdi:delete-restore",
-    ),
-    VacuumWaterSensorEntityDescription(
+    SensorEntityDescription(
         key=SENSOR_PREDICTION_DIAGNOSTICS,
-        value_key="diagnostics",
-        translation_key="prediction_diagnostics",
-        icon="mdi:chart-timeline-variant",
+        name="Prediction Diagnostics",
+        icon="mdi:chart-line",
     ),
-)
+]
 
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    entry: ConfigEntry,
+    config_entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up sensor entities."""
-    coordinator: VacuumWaterLevelCoordinator = hass.data[DOMAIN][entry.entry_id]
+    """Set up Vacuum Water Level sensors from a config entry."""
+    coordinator: VacuumWaterLevelCoordinator = hass.data[DOMAIN][config_entry.entry_id]
 
     entities = [
         VacuumWaterLevelSensor(coordinator, description)
@@ -136,36 +133,114 @@ async def async_setup_entry(
     async_add_entities(entities)
 
 
-class VacuumWaterLevelSensor(VacuumWaterLevelBaseEntity, SensorEntity):
-    """Sensor entity for vacuum water level."""
-
-    entity_description: VacuumWaterSensorEntityDescription
-
-    def __init__(
-        self,
-        coordinator: VacuumWaterLevelCoordinator,
-        description: VacuumWaterSensorEntityDescription,
-    ) -> None:
-        """Initialize the sensor."""
-        super().__init__(coordinator, description.key)
-        self.entity_description = description
+class VacuumWaterLevelSensor(VacuumWaterLevelEntity, SensorEntity):
+    """Sensor entity for Vacuum Water Level."""
 
     @property
     def native_value(self) -> Any:
-        """Return the value from coordinator data."""
-        if not self.coordinator.data:
+        """Return the native value of the sensor."""
+        key = self.entity_description.key
+
+        if key == SENSOR_WATER_REMAINING_PCT:
+            return round(self.coordinator.get_water_remaining_pct(), 1)
+
+        if key == SENSOR_WATER_REMAINING_ML:
+            return round(self.coordinator.get_water_remaining_ml(), 1)
+
+        if key == SENSOR_WATER_USED_SINCE_REFILL:
+            return round(self.coordinator.state.water_used_since_refill_ml, 1)
+
+        if key == SENSOR_WASTE_TANK_PCT:
+            return round(self.coordinator.get_waste_pct(), 1)
+
+        if key == SENSOR_WASTE_TANK_ML:
+            return round(self.coordinator.get_waste_ml(), 1)
+
+        if key == SENSOR_LAST_REFILL:
+            refill_str = self.coordinator.state.last_refill
+            if refill_str:
+                try:
+                    return datetime.fromisoformat(refill_str)
+                except (ValueError, TypeError):
+                    return None
             return None
-        val = self.coordinator.data.get(self.entity_description.value_key)
-        if self.entity_description.key == SENSOR_PREDICTION_DIAGNOSTICS:
-            return f"Model Cycle {self.coordinator.water_model.cycles_observed}"
-        return val
+
+        if key == SENSOR_LAST_WASTE_EMPTY:
+            empty_str = self.coordinator.state.last_waste_empty
+            if empty_str:
+                try:
+                    return datetime.fromisoformat(empty_str)
+                except (ValueError, TypeError):
+                    return None
+            return None
+
+        if key == SENSOR_WATER_CONSUMPTION_RATE:
+            return self.coordinator.get_water_consumption_rate()
+
+        if key == SENSOR_DIRTY_WATER_FILL_RATE:
+            return self.coordinator.get_dirty_water_fill_rate()
+
+        if key == SENSOR_PREDICTION_DIAGNOSTICS:
+            diag = self.coordinator.get_diagnostics()
+            # Return a summary string for the sensor state
+            return f"Water: {diag['water_model']['cycles_observed']} cycles, Waste: {diag['waste_model']['cycles_observed']} cycles"
+
+        return None
 
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
-        """Return extra diagnostics attributes."""
-        if (
-            self.entity_description.key == SENSOR_PREDICTION_DIAGNOSTICS
-            and self.coordinator.data
-        ):
-            return self.coordinator.data.get("diagnostics", {})
+        """Return extra state attributes."""
+        key = self.entity_description.key
+
+        if key == SENSOR_WATER_REMAINING_PCT:
+            is_low, source = self.coordinator.get_water_low()
+            return {
+                "effective_capacity_ml": round(
+                    self.coordinator.get_effective_clean_capacity(), 1
+                ),
+                "clean_reserve_ml": round(
+                    self.coordinator.reserve.clean_reserve_ml, 1
+                ),
+                "water_low_threshold": self.coordinator.water_low_threshold,
+                "is_water_low": is_low,
+                "detection_source": source,
+                "cycles_observed": self.coordinator.water_model.cycles_observed,
+            }
+
+        if key == SENSOR_WASTE_TANK_PCT:
+            is_full, source = self.coordinator.get_waste_full()
+            return {
+                "effective_capacity_ml": round(
+                    self.coordinator.get_effective_dirty_capacity(), 1
+                ),
+                "dirty_reserve_ml": round(
+                    self.coordinator.reserve.dirty_reserve_ml, 1
+                ),
+                "waste_full_threshold": self.coordinator.waste_full_threshold,
+                "is_waste_full": is_full,
+                "detection_source": source,
+                "cycles_observed": self.coordinator.waste_model.cycles_observed,
+            }
+
+        if key == SENSOR_WATER_USED_SINCE_REFILL:
+            return {
+                "area_ml_per_m2": self.coordinator.water_model.correction_factors.get(
+                    "area_ml_per_m2", 2.0
+                ),
+                "learned_wash_volume_ml": self.coordinator.water_model.learned_wash_volume_ml,
+                "pending_area_m2": self.coordinator.water_model.pending_area_m2,
+                "pending_wash_count": self.coordinator.water_model.pending_wash_count,
+                "last_mop_mode": self.coordinator.state.last_mop_mode,
+                "last_mop_intensity": self.coordinator.state.last_mop_intensity,
+            }
+
+        if key == SENSOR_WASTE_TANK_ML:
+            return {
+                "waste_ratio": self.coordinator.waste_model.waste_ratio,
+                "pending_usage_ml": self.coordinator.waste_model.pending_usage_ml,
+            }
+
+        if key == SENSOR_PREDICTION_DIAGNOSTICS:
+            return self.coordinator.get_diagnostics()
+
         return None

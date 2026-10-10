@@ -1,226 +1,391 @@
-"""Config flow for Vacuum Water Level integration."""
+"""Config flow for Vacuum Water Level integration.
+
+Two-step setup:
+    1. Select vacuum entity and tank capacities
+    2. Auto-discover companion entities (editable)
+
+Supports an OptionsFlow for editing all discovered entities after setup.
+"""
 
 from __future__ import annotations
 
+import logging
 from typing import Any
+
 import voluptuous as vol
 
 from homeassistant import config_entries
-from homeassistant.core import callback
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import selector
+from homeassistant.helpers.entity_registry import async_get as async_get_entity_registry
 
 from .const import (
-    DOMAIN,
-    CONF_VACUUM_ENTITY,
+    CONF_AREA_ENTITY,
+    CONF_CLEANING_ENTITY,
     CONF_CLEAN_TANK_CAPACITY,
+    CONF_CLEAN_WATER_SENSOR,
     CONF_DIRTY_TANK_CAPACITY,
+    CONF_DIRTY_WATER_SENSOR,
+    CONF_DOCK_ERROR_ENTITY,
+    CONF_MOP_INTENSITY_ENTITY,
+    CONF_MOP_MODE_ENTITY,
+    CONF_STATUS_ENTITY,
+    CONF_VACUUM_ENTITY,
     CONF_WATER_LOW_THRESHOLD,
     CONF_WASTE_FULL_THRESHOLD,
-    CONF_CLEANING_ENTITY,
-    CONF_AREA_ENTITY,
-    CONF_STATUS_ENTITY,
-    CONF_MOP_MODE_ENTITY,
-    CONF_MOP_INTENSITY_ENTITY,
-    CONF_DOCK_ERROR_ENTITY,
-    CONF_CLEAN_WATER_SENSOR,
-    CONF_DIRTY_WATER_SENSOR,
     DEFAULT_CLEAN_TANK_CAPACITY,
     DEFAULT_DIRTY_TANK_CAPACITY,
     DEFAULT_WATER_LOW_THRESHOLD,
     DEFAULT_WASTE_FULL_THRESHOLD,
+    DOMAIN,
 )
+from .discovery import discover_companion_entities
+
+_LOGGER = logging.getLogger(__name__)
+
+
+def _get_vacuum_entities(hass: HomeAssistant) -> list[selector.SelectOptionDict]:
+    """Get all vacuum entities for the selector."""
+    try:
+        ent_reg = async_get_entity_registry(hass)
+    except Exception as err:
+        _LOGGER.error("Vacuum Water Level: Failed to get entity registry: %s", err)
+        ent_reg = None
+
+    options: list[selector.SelectOptionDict] = []
+
+    if ent_reg is not None:
+        for entity in ent_reg.entities.values():
+            if entity.domain == "vacuum":
+                state = hass.states.get(entity.entity_id)
+                name = entity.name or entity.original_name or (
+                    state.name if state else entity.entity_id
+                )
+                options.append(
+                    selector.SelectOptionDict(
+                        value=entity.entity_id,
+                        label=f"{name} ({entity.entity_id})",
+                    )
+                )
+
+    # Also check states for vacuum entities not in registry
+    try:
+        for state in hass.states.async_all():
+            if state.entity_id.startswith("vacuum."):
+                if not any(o["value"] == state.entity_id for o in options):
+                    options.append(
+                        selector.SelectOptionDict(
+                            value=state.entity_id,
+                            label=f"{state.name} ({state.entity_id})",
+                        )
+                    )
+    except Exception as err:
+        _LOGGER.error("Vacuum Water Level: Failed to get vacuum states: %s", err)
+
+    return sorted(options, key=lambda x: x["label"])
+
+
+def _build_user_schema() -> vol.Schema:
+    """Build the schema for the initial user step."""
+    return vol.Schema(
+        {
+            vol.Required(CONF_VACUUM_ENTITY): selector.EntitySelector(
+                selector.EntitySelectorConfig(domain=["vacuum"]),
+            ),
+            vol.Required(
+                CONF_CLEAN_TANK_CAPACITY, default=DEFAULT_CLEAN_TANK_CAPACITY
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=10, max=5000, step=1, mode=selector.NumberSelectorMode.BOX
+                )
+            ),
+            vol.Required(
+                CONF_DIRTY_TANK_CAPACITY, default=DEFAULT_DIRTY_TANK_CAPACITY
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=10, max=5000, step=1, mode=selector.NumberSelectorMode.BOX
+                )
+            ),
+            vol.Optional(
+                CONF_WATER_LOW_THRESHOLD, default=DEFAULT_WATER_LOW_THRESHOLD
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=1, max=50, step=1, mode=selector.NumberSelectorMode.BOX
+                )
+            ),
+            vol.Optional(
+                CONF_WASTE_FULL_THRESHOLD, default=DEFAULT_WASTE_FULL_THRESHOLD
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=50, max=99, step=1, mode=selector.NumberSelectorMode.BOX
+                )
+            ),
+        }
+    )
+
+
+def _build_companion_schema(
+    discovered: dict[str, Any] | None = None,
+) -> vol.Schema:
+    """Build the companion entity selection schema.
+
+    Only sets default for entity selectors when the value is not None,
+    to avoid voluptuous validation errors.
+    """
+    discovered = discovered or {}
+
+    def _entity_field(domain: list[str]) -> selector.EntitySelector:
+        return selector.EntitySelector(
+            selector.EntitySelectorConfig(domain=domain, multiple=False),
+        )
+
+    entity_fields = [
+        (CONF_CLEANING_ENTITY, ["binary_sensor", "sensor"]),
+        (CONF_AREA_ENTITY, ["sensor"]),
+        (CONF_STATUS_ENTITY, ["sensor"]),
+        (CONF_MOP_MODE_ENTITY, ["select", "sensor"]),
+        (CONF_MOP_INTENSITY_ENTITY, ["select", "sensor"]),
+        (CONF_DOCK_ERROR_ENTITY, ["binary_sensor", "sensor"]),
+        (CONF_CLEAN_WATER_SENSOR, ["binary_sensor", "sensor"]),
+        (CONF_DIRTY_WATER_SENSOR, ["binary_sensor", "sensor"]),
+    ]
+
+    schema_dict: dict = {}
+    for key, domain in entity_fields:
+        val = discovered.get(key)
+        if val is not None:
+            schema_dict[vol.Optional(key, default=val)] = _entity_field(domain)
+        else:
+            schema_dict[vol.Optional(key)] = _entity_field(domain)
+
+    return vol.Schema(schema_dict)
 
 
 class VacuumWaterLevelConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Vacuum Water Level."""
 
     VERSION = 1
+    MINOR_VERSION = 1
 
     def __init__(self) -> None:
-        """Initialize the flow."""
-        self._data: dict[str, Any] = {}
+        """Initialize the config flow."""
+        self._discovered_entities: dict[str, Any] = {}
+        self._vacuum_entity: str | None = None
+        self._user_input: dict[str, Any] = {}
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
-    ) -> config_entries.ConfigFlowResult:
-        """Step 1: Select vacuum and tank parameters."""
+    ) -> Any:
+        """Handle the initial step: select vacuum and capacities."""
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            self._data.update(user_input)
-            return await self.async_step_companion()
+            vacuum_entity = user_input[CONF_VACUUM_ENTITY]
 
-        schema = vol.Schema(
-            {
-                vol.Required(CONF_VACUUM_ENTITY): selector.EntitySelector(
-                    selector.EntitySelectorConfig(domain="vacuum")
-                ),
-                vol.Required(
-                    CONF_CLEAN_TANK_CAPACITY, default=DEFAULT_CLEAN_TANK_CAPACITY
-                ): vol.All(vol.Coerce(int), vol.Range(min=100, max=10000)),
-                vol.Required(
-                    CONF_DIRTY_TANK_CAPACITY, default=DEFAULT_DIRTY_TANK_CAPACITY
-                ): vol.All(vol.Coerce(int), vol.Range(min=100, max=10000)),
-                vol.Required(
-                    CONF_WATER_LOW_THRESHOLD, default=DEFAULT_WATER_LOW_THRESHOLD
-                ): vol.All(vol.Coerce(int), vol.Range(min=1, max=50)),
-                vol.Required(
-                    CONF_WASTE_FULL_THRESHOLD, default=DEFAULT_WASTE_FULL_THRESHOLD
-                ): vol.All(vol.Coerce(int), vol.Range(min=50, max=99)),
-            }
-        )
+            # Check for duplicate
+            existing_entries = self._async_current_entries()
+            for entry in existing_entries:
+                if entry.data.get(CONF_VACUUM_ENTITY) == vacuum_entity:
+                    errors["base"] = "already_configured"
+                    break
+
+            if not errors:
+                self._vacuum_entity = vacuum_entity
+                self._user_input = user_input
+
+                # Auto-discover companion entities
+                try:
+                    candidates = discover_companion_entities(
+                        self.hass, vacuum_entity
+                    )
+                    self._discovered_entities = {}
+                    comp_map = {
+                        "cleaning": CONF_CLEANING_ENTITY,
+                        "area": CONF_AREA_ENTITY,
+                        "status": CONF_STATUS_ENTITY,
+                        "mop_mode": CONF_MOP_MODE_ENTITY,
+                        "mop_intensity": CONF_MOP_INTENSITY_ENTITY,
+                        "dock_error": CONF_DOCK_ERROR_ENTITY,
+                        "clean_water": CONF_CLEAN_WATER_SENSOR,
+                        "dirty_water": CONF_DIRTY_WATER_SENSOR,
+                    }
+                    for comp_type, conf_key in comp_map.items():
+                        candidate = candidates.get(comp_type)
+                        if candidate:
+                            self._discovered_entities[conf_key] = (
+                                candidate.entity_id
+                            )
+
+                    _LOGGER.debug(
+                        "Vacuum Water Level: Discovered entities: %s",
+                        self._discovered_entities,
+                    )
+                except Exception as err:
+                    _LOGGER.warning(
+                        "Vacuum Water Level: Discovery failed: %s", err
+                    )
+
+                return await self.async_step_companion()
+
+        # Check if there are any vacuum entities
+        vacuum_options = _get_vacuum_entities(self.hass)
+        if not vacuum_options:
+            return self.async_abort(reason="no_vacuums")
 
         return self.async_show_form(
             step_id="user",
-            data_schema=schema,
+            data_schema=_build_user_schema(),
             errors=errors,
         )
 
     async def async_step_companion(
         self, user_input: dict[str, Any] | None = None
-    ) -> config_entries.ConfigFlowResult:
-        """Step 2: Select companion sensors."""
-        errors: dict[str, str] = {}
-
+    ) -> Any:
+        """Handle the companion entity selection step."""
         if user_input is not None:
-            self._data.update(user_input)
-            vacuum_id = self._data.get(CONF_VACUUM_ENTITY, "Vacuum")
-            return self.async_create_entry(
-                title=f"Water Level ({vacuum_id})",
-                data=self._data,
-            )
-
-        schema = vol.Schema(
-            {
-                vol.Optional(CONF_CLEANING_ENTITY): selector.EntitySelector(
-                    selector.EntitySelectorConfig(domain="binary_sensor")
+            config_data = {
+                CONF_VACUUM_ENTITY: self._vacuum_entity,
+                CONF_CLEAN_TANK_CAPACITY: self._user_input.get(
+                    CONF_CLEAN_TANK_CAPACITY, DEFAULT_CLEAN_TANK_CAPACITY
                 ),
-                vol.Optional(CONF_AREA_ENTITY): selector.EntitySelector(
-                    selector.EntitySelectorConfig(domain="sensor")
+                CONF_DIRTY_TANK_CAPACITY: self._user_input.get(
+                    CONF_DIRTY_TANK_CAPACITY, DEFAULT_DIRTY_TANK_CAPACITY
                 ),
-                vol.Optional(CONF_STATUS_ENTITY): selector.EntitySelector(
-                    selector.EntitySelectorConfig(domain="sensor")
+                CONF_WATER_LOW_THRESHOLD: self._user_input.get(
+                    CONF_WATER_LOW_THRESHOLD, DEFAULT_WATER_LOW_THRESHOLD
                 ),
-                vol.Optional(CONF_MOP_MODE_ENTITY): selector.EntitySelector(
-                    selector.EntitySelectorConfig()
-                ),
-                vol.Optional(CONF_MOP_INTENSITY_ENTITY): selector.EntitySelector(
-                    selector.EntitySelectorConfig()
-                ),
-                vol.Optional(CONF_DOCK_ERROR_ENTITY): selector.EntitySelector(
-                    selector.EntitySelectorConfig(domain="sensor")
-                ),
-                vol.Optional(CONF_CLEAN_WATER_SENSOR): selector.EntitySelector(
-                    selector.EntitySelectorConfig(domain="binary_sensor")
-                ),
-                vol.Optional(CONF_DIRTY_WATER_SENSOR): selector.EntitySelector(
-                    selector.EntitySelectorConfig(domain="binary_sensor")
+                CONF_WASTE_FULL_THRESHOLD: self._user_input.get(
+                    CONF_WASTE_FULL_THRESHOLD, DEFAULT_WASTE_FULL_THRESHOLD
                 ),
             }
-        )
+
+            # Determine unique ID
+            await self.async_set_unique_id(
+                f"{DOMAIN}_{self._vacuum_entity}"
+            )
+            self._abort_if_unique_id_configured()
+
+            # Store companion entities in options
+            options = {k: v for k, v in user_input.items() if v}
+
+            return self.async_create_entry(
+                title=f"Water Level - {self._vacuum_entity.split('.')[-1]}",
+                data=config_data,
+                options=options,
+            )
+
+        # Build schema with discovered defaults
+        schema = _build_companion_schema(self._discovered_entities)
+
+        # Build description placeholders for discovery info
+        discovery_info = ""
+        for key, value in self._discovered_entities.items():
+            if value:
+                discovery_info += f"- {key}: {value}\n"
 
         return self.async_show_form(
             step_id="companion",
             data_schema=schema,
-            errors=errors,
+            description_placeholders={
+                "discovery_info": discovery_info or "No entities auto-discovered.",
+            },
         )
 
     @staticmethod
     @callback
     def async_get_options_flow(
         config_entry: config_entries.ConfigEntry,
-    ) -> config_entries.OptionsFlow:
-        """Get options flow."""
-        return VacuumWaterLevelOptionsFlow(config_entry)
+    ) -> "VacuumWaterLevelOptionsFlow":
+        """Get the options flow."""
+        return VacuumWaterLevelOptionsFlow()
 
 
 class VacuumWaterLevelOptionsFlow(config_entries.OptionsFlow):
-    """Handle options flow."""
-
-    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
-        """Initialize options flow."""
-        self._config_entry = config_entry
+    """Options flow for editing companion entities and thresholds."""
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
-    ) -> config_entries.ConfigFlowResult:
+    ) -> Any:
         """Manage the options."""
         if user_input is not None:
-            return self.async_create_entry(title="", data=user_input)
+            # Filter out empty string values (cleared entity selectors)
+            cleaned = {k: v for k, v in user_input.items() if v}
+            return self.async_create_entry(title="", data=cleaned)
 
-        current = {**self._config_entry.data, **self._config_entry.options}
+        # Build schema from current options/data
+        current_options = {**self.config_entry.data, **self.config_entry.options}
 
-        schema = vol.Schema(
-            {
-                vol.Required(
-                    CONF_CLEAN_TANK_CAPACITY,
-                    default=current.get(
-                        CONF_CLEAN_TANK_CAPACITY, DEFAULT_CLEAN_TANK_CAPACITY
-                    ),
-                ): vol.All(vol.Coerce(int), vol.Range(min=100, max=10000)),
-                vol.Required(
-                    CONF_DIRTY_TANK_CAPACITY,
-                    default=current.get(
-                        CONF_DIRTY_TANK_CAPACITY, DEFAULT_DIRTY_TANK_CAPACITY
-                    ),
-                ): vol.All(vol.Coerce(int), vol.Range(min=100, max=10000)),
-                vol.Required(
-                    CONF_WATER_LOW_THRESHOLD,
-                    default=current.get(
-                        CONF_WATER_LOW_THRESHOLD, DEFAULT_WATER_LOW_THRESHOLD
-                    ),
-                ): vol.All(vol.Coerce(int), vol.Range(min=1, max=50)),
-                vol.Required(
-                    CONF_WASTE_FULL_THRESHOLD,
-                    default=current.get(
-                        CONF_WASTE_FULL_THRESHOLD, DEFAULT_WASTE_FULL_THRESHOLD
-                    ),
-                ): vol.All(vol.Coerce(int), vol.Range(min=50, max=99)),
-                vol.Optional(
-                    CONF_CLEANING_ENTITY,
-                    description={"suggested_value": current.get(CONF_CLEANING_ENTITY)},
-                ): selector.EntitySelector(
-                    selector.EntitySelectorConfig(domain="binary_sensor")
+        def _entity_field(domain: list[str]) -> selector.EntitySelector:
+            return selector.EntitySelector(
+                selector.EntitySelectorConfig(domain=domain, multiple=False)
+            )
+
+        # Numeric fields with safe defaults
+        schema_dict: dict = {
+            vol.Optional(
+                CONF_CLEAN_TANK_CAPACITY,
+                default=current_options.get(
+                    CONF_CLEAN_TANK_CAPACITY, DEFAULT_CLEAN_TANK_CAPACITY
                 ),
-                vol.Optional(
-                    CONF_AREA_ENTITY,
-                    description={"suggested_value": current.get(CONF_AREA_ENTITY)},
-                ): selector.EntitySelector(
-                    selector.EntitySelectorConfig(domain="sensor")
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=10, max=5000, step=1, mode=selector.NumberSelectorMode.BOX
+                )
+            ),
+            vol.Optional(
+                CONF_DIRTY_TANK_CAPACITY,
+                default=current_options.get(
+                    CONF_DIRTY_TANK_CAPACITY, DEFAULT_DIRTY_TANK_CAPACITY
                 ),
-                vol.Optional(
-                    CONF_STATUS_ENTITY,
-                    description={"suggested_value": current.get(CONF_STATUS_ENTITY)},
-                ): selector.EntitySelector(
-                    selector.EntitySelectorConfig(domain="sensor")
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=10, max=5000, step=1, mode=selector.NumberSelectorMode.BOX
+                )
+            ),
+            vol.Optional(
+                CONF_WATER_LOW_THRESHOLD,
+                default=current_options.get(
+                    CONF_WATER_LOW_THRESHOLD, DEFAULT_WATER_LOW_THRESHOLD
                 ),
-                vol.Optional(
-                    CONF_MOP_MODE_ENTITY,
-                    description={"suggested_value": current.get(CONF_MOP_MODE_ENTITY)},
-                ): selector.EntitySelector(selector.EntitySelectorConfig()),
-                vol.Optional(
-                    CONF_MOP_INTENSITY_ENTITY,
-                    description={"suggested_value": current.get(CONF_MOP_INTENSITY_ENTITY)},
-                ): selector.EntitySelector(selector.EntitySelectorConfig()),
-                vol.Optional(
-                    CONF_DOCK_ERROR_ENTITY,
-                    description={"suggested_value": current.get(CONF_DOCK_ERROR_ENTITY)},
-                ): selector.EntitySelector(
-                    selector.EntitySelectorConfig(domain="sensor")
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=1, max=50, step=1, mode=selector.NumberSelectorMode.BOX
+                )
+            ),
+            vol.Optional(
+                CONF_WASTE_FULL_THRESHOLD,
+                default=current_options.get(
+                    CONF_WASTE_FULL_THRESHOLD, DEFAULT_WASTE_FULL_THRESHOLD
                 ),
-                vol.Optional(
-                    CONF_CLEAN_WATER_SENSOR,
-                    description={"suggested_value": current.get(CONF_CLEAN_WATER_SENSOR)},
-                ): selector.EntitySelector(
-                    selector.EntitySelectorConfig(domain="binary_sensor")
-                ),
-                vol.Optional(
-                    CONF_DIRTY_WATER_SENSOR,
-                    description={"suggested_value": current.get(CONF_DIRTY_WATER_SENSOR)},
-                ): selector.EntitySelector(
-                    selector.EntitySelectorConfig(domain="binary_sensor")
-                ),
-            }
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=50, max=99, step=1, mode=selector.NumberSelectorMode.BOX
+                )
+            ),
+        }
+
+        # Entity fields - only set default when value is not None
+        entity_fields = [
+            (CONF_CLEANING_ENTITY, ["binary_sensor", "sensor"]),
+            (CONF_AREA_ENTITY, ["sensor"]),
+            (CONF_STATUS_ENTITY, ["sensor"]),
+            (CONF_MOP_MODE_ENTITY, ["select", "sensor"]),
+            (CONF_MOP_INTENSITY_ENTITY, ["select", "sensor"]),
+            (CONF_DOCK_ERROR_ENTITY, ["binary_sensor", "sensor"]),
+            (CONF_CLEAN_WATER_SENSOR, ["binary_sensor", "sensor"]),
+            (CONF_DIRTY_WATER_SENSOR, ["binary_sensor", "sensor"]),
+        ]
+
+        for key, domain in entity_fields:
+            val = current_options.get(key)
+            if val:
+                schema_dict[vol.Optional(key, default=val)] = _entity_field(domain)
+            else:
+                schema_dict[vol.Optional(key)] = _entity_field(domain)
+
+        schema = vol.Schema(schema_dict)
+
+        return self.async_show_form(
+            step_id="init",
+            data_schema=schema,
         )
-
-        return self.async_show_form(step_id="init", data_schema=schema)
