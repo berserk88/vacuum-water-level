@@ -1,12 +1,11 @@
 {
   "domain": "vacuum_water_level",
   "name": "Vacuum Water Level",
-  "version": "1.0.0",
-  "documentation": "https://github.com/serkhas/vacuum_water_level",
-  "issue_tracker": "https://github.com/serkhas/vacuum_water_level/issues",
-  "codeowners": ["@serkhas"],
+  "codeowners": ["@berserk88"],
   "config_flow": true,
+  "documentation": "https://github.com/berserk88/vacuum-water-level",
+  "integration_type": "helper",
   "iot_class": "calculated",
-  "quality_scale": "platinum",
-  "requirements": []
+  "issue_tracker": "https://github.com/berserk88/vacuum-water-level/issues",
+  "version": "1.1.0"
 }

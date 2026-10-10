@@ -1,55 +1,56 @@
-"""Button platform for Vacuum Water Level integration.
-
-Creates buttons for:
-    - Refilled (manual refill trigger)
-    - Waste Tank Emptied (manual empty trigger)
-    - Clear Prediction Model (reset adaptive models)
-"""
+"""Button platform for Vacuum Water Level integration."""
 
 from __future__ import annotations
 
-import logging
+from dataclasses import dataclass
+from typing import Any
 
-from homeassistant.components.button import (
-    ButtonEntity,
-    ButtonEntityDescription,
-)
+from homeassistant.components.button import ButtonEntity, ButtonEntityDescription
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import BUTTON_CLEAR_MODEL, BUTTON_REFILLED, BUTTON_WASTE_EMPTIED, DOMAIN
+from .const import DOMAIN, BUTTON_REFILLED, BUTTON_WASTE_EMPTIED, BUTTON_CLEAR_MODEL
 from .coordinator import VacuumWaterLevelCoordinator
-from .entity import VacuumWaterLevelEntity
+from .entity import VacuumWaterLevelBaseEntity
 
-_LOGGER = logging.getLogger(__name__)
 
-BUTTON_DESCRIPTIONS = [
-    ButtonEntityDescription(
+@dataclass(frozen=True, kw_only=True)
+class VacuumWaterButtonEntityDescription(ButtonEntityDescription):
+    """Description for button entities."""
+
+    action_type: str
+
+
+BUTTON_DESCRIPTIONS: tuple[VacuumWaterButtonEntityDescription, ...] = (
+    VacuumWaterButtonEntityDescription(
         key=BUTTON_REFILLED,
-        name="Refilled",
-        icon="mdi:water-plus",
+        action_type="refilled",
+        translation_key="refilled",
+        icon="mdi:water-check",
     ),
-    ButtonEntityDescription(
+    VacuumWaterButtonEntityDescription(
         key=BUTTON_WASTE_EMPTIED,
-        name="Waste Tank Emptied",
-        icon="mdi:trash-can-remove",
+        action_type="waste_emptied",
+        translation_key="waste_tank_emptied",
+        icon="mdi:delete-empty",
     ),
-    ButtonEntityDescription(
+    VacuumWaterButtonEntityDescription(
         key=BUTTON_CLEAR_MODEL,
-        name="Clear Prediction Model",
-        icon="mdi:restart-alert",
+        action_type="clear_model",
+        translation_key="clear_prediction_model",
+        icon="mdi:restart",
     ),
-]
+)
 
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    config_entry: ConfigEntry,
+    entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up Vacuum Water Level buttons from a config entry."""
-    coordinator: VacuumWaterLevelCoordinator = hass.data[DOMAIN][config_entry.entry_id]
+    """Set up button entities."""
+    coordinator: VacuumWaterLevelCoordinator = hass.data[DOMAIN][entry.entry_id]
 
     entities = [
         VacuumWaterLevelButton(coordinator, description)
@@ -58,21 +59,26 @@ async def async_setup_entry(
     async_add_entities(entities)
 
 
-class VacuumWaterLevelButton(VacuumWaterLevelEntity, ButtonEntity):
-    """Button entity for Vacuum Water Level."""
+class VacuumWaterLevelButton(VacuumWaterLevelBaseEntity, ButtonEntity):
+    """Button entity to trigger manual maintenance actions."""
+
+    entity_description: VacuumWaterButtonEntityDescription
+
+    def __init__(
+        self,
+        coordinator: VacuumWaterLevelCoordinator,
+        description: VacuumWaterButtonEntityDescription,
+    ) -> None:
+        """Initialize the button."""
+        super().__init__(coordinator, description.key)
+        self.entity_description = description
 
     async def async_press(self) -> None:
-        """Handle the button press."""
-        key = self.entity_description.key
-
-        if key == BUTTON_REFILLED:
-            _LOGGER.debug("Vacuum Water Level: Manual refill button pressed")
-            self.coordinator.manual_refill()
-
-        elif key == BUTTON_WASTE_EMPTIED:
-            _LOGGER.debug("Vacuum Water Level: Manual waste empty button pressed")
-            self.coordinator.manual_waste_empty()
-
-        elif key == BUTTON_CLEAR_MODEL:
-            _LOGGER.debug("Vacuum Water Level: Clear prediction model button pressed")
-            self.coordinator.clear_prediction_model()
+        """Handle button press."""
+        action = self.entity_description.action_type
+        if action == "refilled":
+            await self.coordinator.async_refilled()
+        elif action == "waste_emptied":
+            await self.coordinator.async_waste_emptied()
+        elif action == "clear_model":
+            await self.coordinator.async_clear_prediction_model()

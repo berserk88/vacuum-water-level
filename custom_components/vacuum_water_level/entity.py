@@ -4,56 +4,37 @@ from __future__ import annotations
 
 from typing import Any
 
-from homeassistant.helpers.entity import DeviceInfo, EntityDescription
+from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN
+from .const import DOMAIN, CONF_VACUUM_ENTITY
 from .coordinator import VacuumWaterLevelCoordinator
 
 
-class VacuumWaterLevelEntity(CoordinatorEntity):
-    """Base entity for Vacuum Water Level.
-
-    All entities belong to a synthetic device representing the water tracking
-    for a specific vacuum.
-    """
+class VacuumWaterLevelBaseEntity(CoordinatorEntity[VacuumWaterLevelCoordinator]):
+    """Base entity for vacuum water level sensors."""
 
     _attr_has_entity_name = True
 
     def __init__(
         self,
         coordinator: VacuumWaterLevelCoordinator,
-        description: EntityDescription,
+        entity_key: str,
     ) -> None:
-        """Initialize the entity.
-
-        Args:
-            coordinator: The data coordinator.
-            description: Entity description.
-        """
+        """Initialize the entity."""
         super().__init__(coordinator)
-        self.coordinator = coordinator
-        self.entity_description = description
-        self._attr_unique_id = f"{coordinator.config_entry.entry_id}_{description.key}"
+        self.entity_key = entity_key
+        entry_id = coordinator.config_entry.entry_id
+        self._attr_unique_id = f"{entry_id}_{entity_key}"
 
-    @property
-    def device_info(self) -> DeviceInfo:
-        """Return device info for the synthetic device."""
-        vacuum_name = self.coordinator.vacuum_entity_id
-        # Try to get the vacuum's friendly name
-        vacuum_state = self.hass.states.get(self.coordinator.vacuum_entity_id)
-        if vacuum_state and vacuum_state.name:
-            vacuum_name = vacuum_state.name
-
-        return DeviceInfo(
-            identifiers={(DOMAIN, self.coordinator.config_entry.entry_id)},
-            name=f"Vacuum Water Level - {vacuum_name}",
-            manufacturer="Vacuum Water Level",
-            model="Water Level Tracker",
-            sw_version="1.0.0",
+        # Link to vacuum device in Home Assistant device registry
+        vacuum_entity_id = coordinator.config_entry.options.get(
+            CONF_VACUUM_ENTITY,
+            coordinator.config_entry.data.get(CONF_VACUUM_ENTITY),
         )
-
-    @property
-    def available(self) -> bool:
-        """Return if entity is available."""
-        return self.coordinator.last_update_success or True
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, entry_id)},
+            name=f"Vacuum Water Level ({vacuum_entity_id or 'Vacuum'})",
+            manufacturer="Vacuum Water Level",
+            model="Adaptive Water Estimator",
+        )
