@@ -346,6 +346,12 @@ DIRTY_WATER_ERROR_KEYWORDS = [
 ]
 
 
+NORMAL_DOCK_STATES = (
+    "off", "false", "0", "no", "ok", "normal", "none", "",
+    "idle", "docked", "charging", "ready", "standby", "cleared", "success"
+)
+
+
 def parse_dock_error_clean(dock_error_raw: str | None) -> bool | None:
     """Parse dock error state for clean water issues.
 
@@ -362,7 +368,7 @@ def parse_dock_error_clean(dock_error_raw: str | None) -> bool | None:
     if dock_error_raw is None:
         return None
     text = str(dock_error_raw).lower().strip()
-    if text in ("off", "false", "0", "no", "ok", "normal", "none", ""):
+    if text in NORMAL_DOCK_STATES:
         return False
     # Check for clean water keywords
     for keyword in CLEAN_WATER_ERROR_KEYWORDS:
@@ -391,7 +397,7 @@ def parse_dock_error_dirty(dock_error_raw: str | None) -> bool | None:
     if dock_error_raw is None:
         return None
     text = str(dock_error_raw).lower().strip()
-    if text in ("off", "false", "0", "no", "ok", "normal", "none", ""):
+    if text in NORMAL_DOCK_STATES:
         return False
     # Check for dirty water keywords
     for keyword in DIRTY_WATER_ERROR_KEYWORDS:

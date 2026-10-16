@@ -240,6 +240,19 @@ class VacuumWaterLevelSensor(VacuumWaterLevelEntity, SensorEntity):
                 "pending_usage_ml": self.coordinator.waste_model.pending_usage_ml,
             }
 
+        if key == SENSOR_WATER_CONSUMPTION_RATE:
+            return {
+                "base_rate_ml_per_m2": self.coordinator.water_model.base_consumption_rate,
+                "current_mop_mode": self.coordinator._cached_mop_mode,
+                "current_mop_intensity": self.coordinator._cached_mop_intensity,
+            }
+
+        if key == SENSOR_DIRTY_WATER_FILL_RATE:
+            return {
+                "waste_ratio": self.coordinator.waste_model.waste_ratio,
+                "clean_water_rate_ml_per_m2": self.coordinator.get_water_consumption_rate(),
+            }
+
         if key == SENSOR_PREDICTION_DIAGNOSTICS:
             return self.coordinator.get_diagnostics()
 

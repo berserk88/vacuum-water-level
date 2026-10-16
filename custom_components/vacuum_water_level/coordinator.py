@@ -364,6 +364,9 @@ class VacuumWaterLevelCoordinator(DataUpdateCoordinator):
         dock_err_state = get_entity_state(self.hass, self.dock_error_entity)
         if dock_err_state is not None:
             self._cached_dock_error_raw = dock_err_state.state
+        elif self._cached_status:
+            # Fall back to status entity if dedicated dock error entity is not configured
+            self._cached_dock_error_raw = self._cached_status
         else:
             self._cached_dock_error_raw = None
 
@@ -516,17 +519,17 @@ class VacuumWaterLevelCoordinator(DataUpdateCoordinator):
         # Update last cleaning state
         self.state.last_cleaning_state = is_cleaning
 
+        # Check for refill detection first (clears water low warning and resets water used)
+        self._check_refill()
+
+        # Check for waste empty detection first (clears waste full warning and resets waste collected)
+        self._check_waste_empty()
+
         # Check for water low warning -> reserve learning
         self._check_water_low_warning()
 
         # Check for waste full warning -> reserve learning
         self._check_waste_full_warning()
-
-        # Check for refill detection
-        self._check_refill()
-
-        # Check for waste empty detection
-        self._check_waste_empty()
 
     def _check_water_low_warning(self) -> None:
         """Check for water low warning and learn reserve volume.
@@ -649,35 +652,26 @@ class VacuumWaterLevelCoordinator(DataUpdateCoordinator):
             # Checkpoint in-progress session so calibration has accurate data
             self._checkpoint_session()
 
-        if refill_detected and self.state.water_used_since_refill_ml > 0:
-            # Refill detected - calibrate water model
-            # When a warning was latched, actual usage = effective capacity
-            # (what the vacuum considers empty after reserve)
-            if self.state.clean_warning_latched:
-                actual_usage = self.get_effective_clean_capacity()
-            else:
-                actual_usage = self.state.water_used_since_refill_ml
+            if self.state.water_used_since_refill_ml > 0:
+                # Refill detected - calibrate water model
+                # When a warning was latched, actual usage = effective capacity
+                # (what the vacuum considers empty after reserve)
+                if self.state.clean_warning_latched:
+                    actual_usage = self.get_effective_clean_capacity()
+                else:
+                    actual_usage = self.state.water_used_since_refill_ml
 
-            self.water_model.calibrate(actual_usage)
+                self.water_model.calibrate(actual_usage)
 
-            # Reset water tracking
-            self.state.water_used_since_refill_ml = 0.0
-            self.state.last_refill = datetime.now(timezone.utc).isoformat()
-            self.state.clean_warning_latched = False
-            self._manual_refill_requested = False
+                _LOGGER.debug(
+                    "Vacuum Water Level: Refill detected (source: %s). "
+                    "Calibrated water model against %.1f mL. Cycles: %d",
+                    source,
+                    actual_usage,
+                    self.water_model.cycles_observed,
+                )
 
-            _LOGGER.debug(
-                "Vacuum Water Level: Refill detected (source: %s). "
-                "Calibrated water model against %.1f mL. Cycles: %d",
-                source,
-                actual_usage,
-                self.water_model.cycles_observed,
-            )
-
-            self._persist()
-
-        elif refill_detected and self._manual_refill_requested:
-            # Manual refill with no usage - just reset
+            # Unconditionally reset water tracking, clear warning latch, and persist
             self.state.water_used_since_refill_ml = 0.0
             self.state.last_refill = datetime.now(timezone.utc).isoformat()
             self.state.clean_warning_latched = False
@@ -702,38 +696,28 @@ class VacuumWaterLevelCoordinator(DataUpdateCoordinator):
             # Checkpoint in-progress session so calibration has accurate data
             self._checkpoint_session()
 
-        if empty_detected and self.state.waste_collected_ml > 0:
-            # Waste tank emptied - calibrate waste model
-            # When a warning was latched, actual waste = effective dirty capacity
-            if self.state.dirty_warning_latched:
-                actual_waste = self.get_effective_dirty_capacity()
-            else:
-                actual_waste = self.state.waste_collected_ml
+            if self.state.waste_collected_ml > 0:
+                # Waste tank emptied - calibrate waste model
+                # When a warning was latched, actual waste = effective dirty capacity
+                if self.state.dirty_warning_latched:
+                    actual_waste = self.get_effective_dirty_capacity()
+                else:
+                    actual_waste = self.state.waste_collected_ml
 
-            # Use clean water used since waste empty as reference
-            clean_water_reference = self.state.clean_water_used_since_waste_empty_ml
+                # Use clean water used since waste empty as reference
+                clean_water_reference = self.state.clean_water_used_since_waste_empty_ml
+                if clean_water_reference > 0:
+                    self.waste_model.calibrate(actual_waste, clean_water_reference)
 
-            self.waste_model.calibrate(actual_waste, clean_water_reference)
+                _LOGGER.debug(
+                    "Vacuum Water Level: Waste empty detected (source: %s). "
+                    "Calibrated waste model against %.1f mL. Cycles: %d",
+                    source,
+                    actual_waste,
+                    self.waste_model.cycles_observed,
+                )
 
-            # Reset waste tracking
-            self.state.waste_collected_ml = 0.0
-            self.state.clean_water_used_since_waste_empty_ml = 0.0
-            self.state.last_waste_empty = datetime.now(timezone.utc).isoformat()
-            self.state.dirty_warning_latched = False
-            self._manual_empty_requested = False
-
-            _LOGGER.debug(
-                "Vacuum Water Level: Waste empty detected (source: %s). "
-                "Calibrated waste model against %.1f mL. Cycles: %d",
-                source,
-                actual_waste,
-                self.waste_model.cycles_observed,
-            )
-
-            self._persist()
-
-        elif empty_detected and self._manual_empty_requested:
-            # Manual empty with no waste - just reset
+            # Unconditionally reset waste tracking, clear warning latch, and persist
             self.state.waste_collected_ml = 0.0
             self.state.clean_water_used_since_waste_empty_ml = 0.0
             self.state.last_waste_empty = datetime.now(timezone.utc).isoformat()

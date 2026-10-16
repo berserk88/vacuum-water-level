@@ -552,12 +552,13 @@ class VacuumWaterState:
 def compute_water_remaining_pct(
     used_ml: float,
     capacity_ml: float,
-    reserve_ml: float,
+    reserve_ml: float = 0.0,
 ) -> float:
-    """Compute water remaining percentage.
+    """Compute water remaining percentage based on effective capacity.
 
-    Uses effective capacity (capacity - reserve) so that 0% corresponds to
-    when the vacuum would generate a water low warning.
+    Ensures fill % and volume mL align consistently:
+    effective_capacity = max(capacity_ml - reserve_ml, 1.0)
+    pct = (remaining_ml / effective_capacity) * 100.0
 
     Args:
         used_ml: Water used since last refill.
@@ -567,35 +568,37 @@ def compute_water_remaining_pct(
     Returns:
         Percentage remaining (0-100), clamped.
     """
+    if capacity_ml <= 0:
+        return 0.0
     effective_capacity = max(capacity_ml - reserve_ml, 1.0)
-    remaining = effective_capacity - used_ml
-    pct = (remaining / effective_capacity) * 100.0
-    return max(0.0, min(pct, 100.0))
+    remaining_ml = max(0.0, effective_capacity - used_ml)
+    pct = (remaining_ml / effective_capacity) * 100.0
+    return max(0.0, min(round(pct, 1), 100.0))
 
 
 def compute_water_remaining_ml(
     used_ml: float,
     capacity_ml: float,
-    reserve_ml: float,
+    reserve_ml: float = 0.0,
 ) -> float:
-    """Compute water remaining in mL.
-
-    Returns remaining mL using effective capacity.
-    """
+    """Compute water remaining volume in mL based on effective capacity."""
+    if capacity_ml <= 0:
+        return 0.0
     effective_capacity = max(capacity_ml - reserve_ml, 1.0)
-    remaining = effective_capacity - used_ml
-    return max(0.0, round(remaining, 1))
+    remaining_ml = max(0.0, effective_capacity - used_ml)
+    return max(0.0, min(round(remaining_ml, 1), round(effective_capacity, 1)))
 
 
 def compute_waste_pct(
     waste_ml: float,
     capacity_ml: float,
-    reserve_ml: float,
+    reserve_ml: float = 0.0,
 ) -> float:
-    """Compute waste tank fill percentage.
+    """Compute waste tank fill percentage based on effective dirty capacity.
 
-    Uses effective capacity so that 100% corresponds to when the vacuum
-    would generate a waste tank full warning.
+    Ensures fill % and volume mL align consistently:
+    effective_capacity = max(capacity_ml - reserve_ml, 1.0)
+    pct = (waste_ml / effective_capacity) * 100.0
 
     Args:
         waste_ml: Waste collected since last empty.
@@ -605,16 +608,22 @@ def compute_waste_pct(
     Returns:
         Percentage full (0-100), clamped.
     """
+    if capacity_ml <= 0:
+        return 0.0
     effective_capacity = max(capacity_ml - reserve_ml, 1.0)
-    pct = (waste_ml / effective_capacity) * 100.0
-    return max(0.0, min(pct, 100.0))
+    collected_ml = max(0.0, min(waste_ml, effective_capacity))
+    pct = (collected_ml / effective_capacity) * 100.0
+    return max(0.0, min(round(pct, 1), 100.0))
 
 
 def compute_waste_ml(
     waste_ml: float,
     capacity_ml: float,
-    reserve_ml: float,
+    reserve_ml: float = 0.0,
 ) -> float:
     """Compute waste tank fill in mL (capped at effective capacity)."""
+    if capacity_ml <= 0:
+        return 0.0
     effective_capacity = max(capacity_ml - reserve_ml, 1.0)
-    return min(round(waste_ml, 1), round(effective_capacity, 1))
+    collected_ml = max(0.0, min(waste_ml, effective_capacity))
+    return round(collected_ml, 1)
